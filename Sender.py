@@ -48,6 +48,8 @@ class Sender(BasicSender.BasicSender):
 			
 			#Sent first window of packets
 			self._initalize_and_send_buffer()
+
+			#Begin Timeout Timer
 			self._timer_start()
 
 			#Start listening for acks and advance sliding window as needed
@@ -63,11 +65,12 @@ class Sender(BasicSender.BasicSender):
 
 
 	def _initalize_and_send_buffer(self):
-		#Remove all items in buffer less than the base_num
+		#Remove all items in buffer less than the base_num. For cleanup purposes
 		for seqno in self.buffer.keys():
 			if seqno < self.send_base:
 				del self.buffer[seqno]
 
+		#Add up to WIND_SIZE packets into the buffer
 		for i in range(self.wind_size):
 			seqno = self.send_base + i
 			#We already have this packet in the buffer
@@ -75,10 +78,11 @@ class Sender(BasicSender.BasicSender):
 				pass
 			else:
 				data = self.infile.read(self.max_payload)
-				print "BUFFER: %d" % (seqno - self.isn)
 				if data:
 					#We have Data!
 					self.buffer[seqno] = data
+
+					#Send this data right away!
 					self._transmit(seqno)
 				else:
 					#We ran out of data
@@ -86,6 +90,7 @@ class Sender(BasicSender.BasicSender):
 
 	def _listen_for_acks(self):
 		while True:
+			#Always listen for acks
 			response = self.receive()
 
 			if response:
@@ -95,27 +100,31 @@ class Sender(BasicSender.BasicSender):
 						ack = int(seqno)
 						print "ACK: %d" % (ack - self.isn)
 						if ack > self.send_base:
+							#We can move our window forward! And stop our timer!
 							self._timer_stop()
 							if ack - self.isn > self.num_packets:
 								#We received an ack for a packet seq no. greater than the num of packets we need to send. We are DONE!
 								return
 							else:
-								#Move our send_base over more to the right
-								self._timer_start()
+								#Move our window over more to the right
 								self.send_base = ack
 
 								#Buffer more packets and send them
 								self._initalize_and_send_buffer()
+
+								#Start timer again!
+								self._timer_start()
 				else:
-					#Not good packet!
+					#Not good packet! Listen for acks again
 					pass
 
 	def _timeout(self):
+		#Timeout Function. Just resubmit the send_base packet and reset the timer
 		self._transmit(self.send_base)
 		self._timer_start()
 
 	def _transmit(self, seqno):
-		#Send a single packet. If packet is already inflight and this is not a retransmit, we won't send the packet again.
+		#Send a single packet.
 		msg_type = "data"
 		data = self.buffer[seqno]
 
