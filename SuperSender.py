@@ -29,7 +29,7 @@ class Sender(BasicSender.BasicSender):
 		self.max_payload = 1472
 
 		#Window Size
-		self.wind_size = 10
+		self.wind_size = 5
 
 		#Buffering Packets To Send (Seq #, (inflight, data))
 		self.buffer = dict()
@@ -39,7 +39,7 @@ class Sender(BasicSender.BasicSender):
 		self.num_packets = int(math.ceil(float(file_size) / self.max_payload))
 
 		#Timeout Timer
-		self.timer = None
+		self.timers = dict()
 		self.lock = threading.Lock()
 
 	# Main sending loop.
@@ -51,9 +51,6 @@ class Sender(BasicSender.BasicSender):
 			
 			#Sent first window of packets
 			self._initialize_and_send_buffer()
-
-			#Begin Timeout Timer
-			self._timer_restart()
 
 			#Start listening for acks and advance sliding window as needed
 			self._listen_for_acks()
@@ -105,12 +102,12 @@ class Sender(BasicSender.BasicSender):
 						if msg_type != "ack":
 							continue
 						ack = int(seqno)
-						print "ACK: %d" % (ack - self.isn)
+						#print "ACK: %d" % (ack - self.isn)
 						if ack >= self.send_base and ack < self.send_base + self.wind_size:
 							#Ack is for packet within our window. Set acked as TRUE in our buffer
 							self.buffer[ack] = BufferedData(True, self.buffer[ack].data)
 							self._set_send_base()
-							self._timer_stop()
+							self._timer_stop(ack)
 							if self.send_base - self.isn > self.num_packets:
 								#We are DONE! Our send_base is higher than the number of packets we are to send
 								return
@@ -118,44 +115,41 @@ class Sender(BasicSender.BasicSender):
 								#Buffer more packets and send them
 								self._initialize_and_send_buffer()
 
-								#Start timer again!
-								self._timer_restart()
 				else:
 					#Not good packet! Listen for acks again
 					pass
 
-	def _timeout(self):
+	def _timeout(self, seqno):
 		#Timeout Function. Just resubmit the send_base packet and reset the timer
-		for i in range(self.wind_size):
-			seqno = self.send_base + i
-			if self.buffer.has_key(seqno) and not self.buffer[seqno].acked:
-				self._transmit(seqno)
+		self._transmit(seqno)
 		if not self.send_base - self.isn > self.num_packets:
-			self._timer_restart()
+			self._timer_restart(seqno)
 
 	def _transmit(self, seqno):
 		#Send a single packet.
 		msg_type = "data"
-		buffered_data = self.buffer[seqno]
+		if self.buffer.has_key(seqno):
+			buffered_data = self.buffer[seqno]
 
-		print "TRANSMITED: %d" % (seqno - self.isn)
-		packet = self.make_packet(msg_type, seqno, buffered_data.data)
-		self.send(packet)
+			#print "TRANSMITED: %d" % (seqno - self.isn)
+			packet = self.make_packet(msg_type, seqno, buffered_data.data)
+			self.send(packet)
+			self._timer_restart(seqno)
 
-	def _timer_stop(self):
+	def _timer_stop(self, seqno):
 		#Stops the timeout timer
 		with self.lock:
-			if self.timer:
-				self.timer.cancel()
-				self.timer = None
+			if self.timers.has_key(seqno):
+				self.timers[seqno].cancel()
+				del self.timers[seqno]
 
-	def _timer_restart(self):
+	def _timer_restart(self, seqno):
 		with self.lock:
-			if self.timer:
-				self.timer.cancel()
-				self.timer = None
-			self.timer = threading.Timer(self.timeout, self._timeout)
-			self.timer.start()
+			if self.timers.has_key(seqno):
+				self.timers[seqno].cancel()
+				del self.timers[seqno]
+			self.timers[seqno] = threading.Timer(self.timeout, self._timeout, [seqno])
+			self.timers[seqno].start()
 
 	def _set_send_base(self):
 		sorted_buffer = sorted(self.buffer.items())
@@ -163,7 +157,7 @@ class Sender(BasicSender.BasicSender):
 			if buffered_data.acked:
 				self.send_base += 1
 			else:
-				break;
+				break
 
 	def _initialize_connection(self, retry_count):
 		#print "WHY HELLO THERE"

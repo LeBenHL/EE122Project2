@@ -26,7 +26,7 @@ class Sender(BasicSender.BasicSender):
 		self.max_payload = 1472
 
 		#Window Size
-		self.wind_size = 36
+		self.wind_size = 5
 
 		#Buffering Packets To Send (Seq #, (inflight, data))
 		self.buffer = dict()
@@ -103,7 +103,7 @@ class Sender(BasicSender.BasicSender):
 						if msg_type != "ack":
 							continue
 						ack = int(seqno)
-						print "ACK: %d" % (ack - self.isn)
+						#print "ACK: %d" % (ack - self.isn)
 						if ack > self.send_base:
 							#We can move our window forward! And stop our timer!
 							self._timer_stop()
@@ -133,11 +133,12 @@ class Sender(BasicSender.BasicSender):
 	def _transmit(self, seqno):
 		#Send a single packet.
 		msg_type = "data"
-		data = self.buffer[seqno]
+		if self.buffer.has_key(seqno):
+			data = self.buffer[seqno]
 
-		print "TRANSMITED: %d" % (seqno - self.isn)
-		packet = self.make_packet(msg_type, seqno, data)
-		self.send(packet)
+			#print "TRANSMITED: %d" % (seqno - self.isn)
+			packet = self.make_packet(msg_type, seqno, data)
+			self.send(packet)
 
 	def _timer_stop(self):
 		#Stops the timeout timer
