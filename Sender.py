@@ -40,14 +40,19 @@ class Sender(BasicSender.BasicSender):
 		self.timer = None
 		self.lock = threading.Lock()
 
+		self.count = 0
+
 	# Main sending loop.
 	def start(self):
 		#print "===== Welcome to Bears-TP Sender v1.0! ====="
 		self.isn = random.randint(0, 100)
 
+        # self.initialize_connection initializes the connection
+        # and self.send_base, which maintains the invariant that
+        # it is always the seqno of the leftmost packet in window
 		if (self._initialize_connection(self.retry_count)):
 			
-			#Sent first window of packets
+			#Send first window of packets
 			self._initialize_and_send_buffer()
 
 			#Begin Timeout Timer
@@ -66,26 +71,26 @@ class Sender(BasicSender.BasicSender):
 			#print "Could not connect to the receiving socket"
 			pass
 
-
 	def _initialize_and_send_buffer(self):
-		#Remove all items in buffer less than the base_num. For cleanup purposes
+		#Remove all items in buffer less than self.send_base.
+        # For cleanup purposes
 		for seqno in self.buffer.keys():
 			if seqno < self.send_base:
 				del self.buffer[seqno]
 
 		#Add up to WIND_SIZE packets into the buffer
-		for i in range(self.wind_size):
+		for i in range(self.wind_size): # i = 0,1,2,3,4, ...
 			seqno = self.send_base + i
-			#We already have this packet in the buffer
 			if self.buffer.has_key(seqno):
+                #We already have this packet in the buffer
 				pass
 			else:
 				data = self.infile.read(self.max_payload)
 				if data:
-					#We have Data!
+					#We have data!
 					self.buffer[seqno] = data
 
-					#Send this data right away!
+					#We only transmit new data
 					self._transmit(seqno)
 				else:
 					#We ran out of data
@@ -139,6 +144,8 @@ class Sender(BasicSender.BasicSender):
 			#print "TRANSMITED: %d" % (seqno - self.isn)
 			packet = self.make_packet(msg_type, seqno, data)
 			self.send(packet)
+			self.count += 1
+			print self.count
 
 	def _timer_stop(self):
 		#Stops the timeout timer

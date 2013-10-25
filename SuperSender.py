@@ -42,6 +42,8 @@ class Sender(BasicSender.BasicSender):
 		self.timers = dict()
 		self.lock = threading.Lock()
 
+		self.count = 0
+
 	# Main sending loop.
 	def start(self):
 		#print "===== Welcome to Bears-TP Sender v1.0! ====="
@@ -134,6 +136,10 @@ class Sender(BasicSender.BasicSender):
 			#print "TRANSMITED: %d" % (seqno - self.isn)
 			packet = self.make_packet(msg_type, seqno, buffered_data.data)
 			self.send(packet)
+			self.count += 1
+			print self.count
+
+			#Timer for each packet sent
 			self._timer_restart(seqno)
 
 	def _timer_stop(self, seqno):
@@ -152,6 +158,7 @@ class Sender(BasicSender.BasicSender):
 			self.timers[seqno].start()
 
 	def _set_send_base(self):
+		#Finds the new base by sorting the current items in the suffer and finding the location of the last contigious acked packet
 		sorted_buffer = sorted(self.buffer.items())
 		for seqno, buffered_data in sorted_buffer:
 			if buffered_data.acked:
