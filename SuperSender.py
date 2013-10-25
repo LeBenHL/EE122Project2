@@ -5,12 +5,13 @@ from collections import namedtuple
 import os
 import math
 import threading
+from datetime import datetime
 
 import Checksum
 import BasicSender
 
 
-BufferedData = namedtuple('BufferedData', ['acked', 'data'])
+BufferedData = namedtuple('BufferedData', ['acked', 'retransmitted', 'data'])
 
 '''
 This is a skeleton sender class. Create a fantastic transport protocol here.
@@ -22,8 +23,11 @@ class Sender(BasicSender.BasicSender):
 		#Number of times to retry connection. Make it very large so we keep bothering receiver 5ever before it talks to us. Don't ignore us bitch
 		self.retry_count = 10000000000000
 
+		# Alpha Value for RTT Estimation (Karn/Partidge)
+		self.alpha = 0.875
+		self.estimated_rtt = 0.250
 		# 0.5 Second timeout (500ms)
-		self.timeout = 0.5
+		self.timeout = self.estimated_rtt * 2
 
 		#Max Payload
 		self.max_payload = 1472
@@ -42,7 +46,8 @@ class Sender(BasicSender.BasicSender):
 		self.timers = dict()
 		self.lock = threading.Lock()
 
-		self.count = 0
+		#RTT Estimation
+		self.packet_timestamp = dict()
 
 	# Main sending loop.
 	def start(self):
@@ -51,11 +56,13 @@ class Sender(BasicSender.BasicSender):
 
 		if (self._initialize_connection(self.retry_count)):
 			
-			#Sent first window of packets
-			self._initialize_and_send_buffer()
+			#Edge case where we have no data to send
+			if self.num_packets > 0:
+				#Sent first window of packets
+				self._initialize_and_send_buffer()
 
-			#Start listening for acks and advance sliding window as needed
-			self._listen_for_acks()
+				#Start listening for acks and advance sliding window as needed
+				self._listen_for_acks()
 
 			#Done sending everything!
 			if self._tear_down_connection(self.retry_count):
@@ -84,7 +91,7 @@ class Sender(BasicSender.BasicSender):
 				data = self.infile.read(self.max_payload)
 				if data:
 					#We have Data!
-					self.buffer[seqno] = BufferedData(False, data)
+					self.buffer[seqno] = BufferedData(False, False, data)
 
 					#Send this data right away!
 					self._transmit(seqno)
@@ -107,9 +114,16 @@ class Sender(BasicSender.BasicSender):
 						#print "ACK: %d" % (ack - self.isn)
 						if ack >= self.send_base and ack < self.send_base + self.wind_size:
 							#Ack is for packet within our window. Set acked as TRUE in our buffer
-							self.buffer[ack] = BufferedData(True, self.buffer[ack].data)
+							self.buffer[ack] = BufferedData(True, self.buffer[ack].retransmitted, self.buffer[ack].data)
 							self._set_send_base()
 							self._timer_stop(ack)
+
+							if not self.buffer[ack].retransmitted:
+								delta = datetime.now() - self.packet_timestamp[ack]
+								sample_rtt = delta.seconds + delta.microseconds/1E6
+								self.estimated_rtt = self.alpha * self.estimated_rtt + (1 - self.alpha) * sample_rtt
+								self.timeout = self.estimated_rtt * 2
+
 							if self.send_base - self.isn > self.num_packets:
 								#We are DONE! Our send_base is higher than the number of packets we are to send
 								return
@@ -123,11 +137,9 @@ class Sender(BasicSender.BasicSender):
 
 	def _timeout(self, seqno):
 		#Timeout Function. Just resubmit the send_base packet and reset the timer
-		self._transmit(seqno)
-		if not self.send_base - self.isn > self.num_packets:
-			self._timer_restart(seqno)
+		self._transmit(seqno, resubmit =True)
 
-	def _transmit(self, seqno):
+	def _transmit(self, seqno, resubmit=False):
 		#Send a single packet.
 		msg_type = "data"
 		if self.buffer.has_key(seqno):
@@ -136,8 +148,12 @@ class Sender(BasicSender.BasicSender):
 			#print "TRANSMITED: %d" % (seqno - self.isn)
 			packet = self.make_packet(msg_type, seqno, buffered_data.data)
 			self.send(packet)
-			self.count += 1
-			print self.count
+
+			if resubmit:
+				self.buffer[seqno] = BufferedData(self.buffer[seqno].acked, True, self.buffer[seqno].data)
+
+			if not self.packet_timestamp.has_key(seqno):
+				self.packet_timestamp[seqno] = datetime.now()
 
 			#Timer for each packet sent
 			self._timer_restart(seqno)

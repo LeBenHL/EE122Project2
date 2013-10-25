@@ -40,8 +40,6 @@ class Sender(BasicSender.BasicSender):
 		self.timer = None
 		self.lock = threading.Lock()
 
-		self.count = 0
-
 	# Main sending loop.
 	def start(self):
 		#print "===== Welcome to Bears-TP Sender v1.0! ====="
@@ -51,15 +49,17 @@ class Sender(BasicSender.BasicSender):
         # and self.send_base, which maintains the invariant that
         # it is always the seqno of the leftmost packet in window
 		if (self._initialize_connection(self.retry_count)):
-			
-			#Send first window of packets
-			self._initialize_and_send_buffer()
 
-			#Begin Timeout Timer
-			self._timer_restart()
+			#Edge case where we have no data to send
+			if self.num_packets > 0:
+				#Send first window of packets
+				self._initialize_and_send_buffer()
 
-			#Start listening for acks and advance sliding window as needed
-			self._listen_for_acks()
+				#Begin Timeout Timer
+				self._timer_restart()
+
+				#Start listening for acks and advance sliding window as needed
+				self._listen_for_acks()
 
 			#Done sending everything!
 			if self._tear_down_connection(self.retry_count):
@@ -144,8 +144,6 @@ class Sender(BasicSender.BasicSender):
 			#print "TRANSMITED: %d" % (seqno - self.isn)
 			packet = self.make_packet(msg_type, seqno, data)
 			self.send(packet)
-			self.count += 1
-			print self.count
 
 	def _timer_stop(self):
 		#Stops the timeout timer
