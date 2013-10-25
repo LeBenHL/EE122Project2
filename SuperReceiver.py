@@ -12,7 +12,7 @@ class Connection():
         self.current_seqno = start_seq - 1 # expect to ack from the start_seqno
         self.host = host
         self.port = port
-        self.max_buf_size = 36
+        self.max_buf_size = 10
         self.outfile = open("%s.%d" % (host,port),"w")
         self.seqnums = {} # enforce single instance of each seqno
 
@@ -30,10 +30,10 @@ class Connection():
                     break # when we find out of order seqno, quit and move on
 
         if self.debug:
-            print "next seqno should be %d" % (self.current_seqno+1)
+            print "next seqno should be %d" % seqno
 
         # note: we return the /next/ sequence number we're expecting
-        return self.current_seqno+1, res_data
+        return seqno, res_data
 
     def record(self,data):
         self.outfile.write(data)

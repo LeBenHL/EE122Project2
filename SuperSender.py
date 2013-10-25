@@ -9,6 +9,9 @@ import threading
 import Checksum
 import BasicSender
 
+
+BufferedData = namedtuple('BufferedData', ['acked', 'data'])
+
 '''
 This is a skeleton sender class. Create a fantastic transport protocol here.
 '''
@@ -26,15 +29,14 @@ class Sender(BasicSender.BasicSender):
 		self.max_payload = 1472
 
 		#Window Size
-		self.wind_size = 36
+		self.wind_size = 10
 
 		#Buffering Packets To Send (Seq #, (inflight, data))
 		self.buffer = dict()
 
 		#Determining Number of Packets to Send
 		file_size = os.fstat(self.infile.fileno()).st_size
-		self.num_packets = math.ceil(float(file_size) / self.max_payload)
-		#print self.num_packets
+		self.num_packets = int(math.ceil(float(file_size) / self.max_payload))
 
 		#Timeout Timer
 		self.timer = None
@@ -83,7 +85,7 @@ class Sender(BasicSender.BasicSender):
 				data = self.infile.read(self.max_payload)
 				if data:
 					#We have Data!
-					self.buffer[seqno] = data
+					self.buffer[seqno] = BufferedData(False, data)
 
 					#Send this data right away!
 					self._transmit(seqno)
@@ -104,12 +106,13 @@ class Sender(BasicSender.BasicSender):
 							continue
 						ack = int(seqno)
 						print "ACK: %d" % (ack - self.isn)
-						if ack > self.send_base:
-							#We can move our window forward! And stop our timer!
+						if ack >= self.send_base and ack < self.send_base + self.wind_size:
+							#Ack is for packet within our window. Set acked as TRUE in our buffer
+							self.buffer[ack] = BufferedData(True, self.buffer[ack].data)
+							self._set_send_base()
 							self._timer_stop()
-							self.send_base = ack
 							if self.send_base - self.isn > self.num_packets:
-								#We received an ack for a packet seq no. greater than the num of packets we need to send. We are DONE!
+								#We are DONE! Our send_base is higher than the number of packets we are to send
 								return
 							else:
 								#Buffer more packets and send them
@@ -122,10 +125,10 @@ class Sender(BasicSender.BasicSender):
 					pass
 
 	def _timeout(self):
-		#Timeout Function. Just resubmit all packets in buffer
+		#Timeout Function. Just resubmit the send_base packet and reset the timer
 		for i in range(self.wind_size):
 			seqno = self.send_base + i
-			if self.buffer.has_key(seqno):
+			if self.buffer.has_key(seqno) and not self.buffer[seqno].acked:
 				self._transmit(seqno)
 		if not self.send_base - self.isn > self.num_packets:
 			self._timer_restart()
@@ -133,10 +136,10 @@ class Sender(BasicSender.BasicSender):
 	def _transmit(self, seqno):
 		#Send a single packet.
 		msg_type = "data"
-		data = self.buffer[seqno]
+		buffered_data = self.buffer[seqno]
 
 		print "TRANSMITED: %d" % (seqno - self.isn)
-		packet = self.make_packet(msg_type, seqno, data)
+		packet = self.make_packet(msg_type, seqno, buffered_data.data)
 		self.send(packet)
 
 	def _timer_stop(self):
@@ -146,7 +149,6 @@ class Sender(BasicSender.BasicSender):
 				self.timer.cancel()
 				self.timer = None
 
-
 	def _timer_restart(self):
 		with self.lock:
 			if self.timer:
@@ -154,6 +156,14 @@ class Sender(BasicSender.BasicSender):
 				self.timer = None
 			self.timer = threading.Timer(self.timeout, self._timeout)
 			self.timer.start()
+
+	def _set_send_base(self):
+		sorted_buffer = sorted(self.buffer.items())
+		for seqno, buffered_data in sorted_buffer:
+			if buffered_data.acked:
+				self.send_base += 1
+			else:
+				break;
 
 	def _initialize_connection(self, retry_count):
 		#print "WHY HELLO THERE"
@@ -175,7 +185,7 @@ class Sender(BasicSender.BasicSender):
 				if Checksum.validate_checksum(response):
 					#Good Packet!
 					msg_type, seqno, data, checksum = self.split_packet(response)
-					self.send_base = int(seqno)
+					self.send_base = self.isn + 1
 					if msg_type == "ack":
 						return True
 					else:
@@ -210,7 +220,7 @@ class Sender(BasicSender.BasicSender):
 					#Good Packet!
 					msg_type, seqno, data, checksum = self.split_packet(response)
 					seqno = int(seqno)
-					if seqno >= self.send_base + 1 and msg_type == "ack":
+					if seqno == self.send_base and msg_type == "ack":
 						return True
 					else:
 						#Wrong SEQ NO EXPECTED
