@@ -9,9 +9,6 @@ import threading
 import Checksum
 import BasicSender
 
-
-BufferedData = namedtuple('BufferedData', ['inflight', 'data'])
-
 '''
 This is a skeleton sender class. Create a fantastic transport protocol here.
 '''
@@ -19,7 +16,7 @@ class Sender(BasicSender.BasicSender):
 	def __init__(self, dest, port, filename, debug=False):
 		super(Sender, self).__init__(dest, port, filename, debug)
 
-		#Number of times to retry connection. Make it very large so we keep bothering receiver 5ever before it talks to us.
+		#Number of times to retry connection. Make it very large so we keep bothering receiver 5ever before it talks to us. Don't ignore us bitch
 		self.retry_count = 10000000000000
 
 		# 0.5 Second timeout (500ms)
@@ -37,65 +34,20 @@ class Sender(BasicSender.BasicSender):
 		#Determining Number of Packets to Send
 		file_size = os.fstat(self.infile.fileno()).st_size
 		self.num_packets = math.ceil(float(file_size) / self.max_payload)
+		print self.num_packets
 
 		#Timeout Timer
-		self.timer = threading.Timer(0.5, self._timeout)
-		self.timer.start()
-		self.timer.cancel()
-		self.timer.start()
-		print self.timer.is_alive()
+		self.timer = None
 
 	# Main sending loop.
 	def start(self):
-		"""
-		print "===== Welcome to Bears-TP Sender v1.0! ====="
-		#Choose a random start sequence
-		self.sequence_number = random.randint(0, 100)
-		
-		if(self.initialize_connection(self.retry_count)):
-			payload = self.infile.read(self.max_payload)
-			while payload:
-				#ITERATION 1 STOP AND GO
-				msg_type = "data"
-
-				#Send a single packet
-				packet = self.make_packet(msg_type, self.sequence_number, payload)
-				self.send(packet)
-
-				#Wait 500ms to receive the packet
-				response = self.receive(timeout=self.timeout)
-
-				if response:
-					if Checksum.validate_checksum(response):
-						#Good Packet!
-						msg_type, seqno, data, checksum = self.split_packet(response)
-						self.sequence_number = int(seqno)
-						payload = self.infile.read(self.max_payload)
-					else:
-						#Not good packet!
-						pass
-
-				else:
-					#Timeout send the same payload in the loop
-					pass
-
-			#Done sending everything!
-			if self.tear_down_connection(self.retry_count):
-				pass
-			else:
-				print "Could not tear down connection. Will just assume it is gone 5ever"
-		else:
-			print "Could not connect to the receiving socket"
-		"""
-
 		print "===== Welcome to Bears-TP Sender v1.0! ====="
 		self.isn = random.randint(0, 100)
 
 		if (self.initialize_connection(self.retry_count)):
 			
 			#Sent first window of packets
-			self._initalize_buffer()
-			self._send_buffer()
+			self._initalize_and_send_buffer()
 
 			#Start listening for acks and advance sliding window as needed
 			self._listen_for_acks()
@@ -109,7 +61,7 @@ class Sender(BasicSender.BasicSender):
 			print "Could not connect to the receiving socket"
 
 
-	def _initalize_buffer(self):
+	def _initalize_and_send_buffer(self):
 		#Remove all items in buffer less than the base_num
 		for seqno in self.buffer.keys():
 			if seqno < self.send_base:
@@ -125,23 +77,14 @@ class Sender(BasicSender.BasicSender):
 
 				if data:
 					#We have Data!
-					self.buffer[seqno] = BufferedData(False, data)
+					self.buffer[seqno] = data
+					#Send this data right away!
+					if self.timer is None:
+						self._timer_start()
+					self._transmit(seqno)
 				else:
 					#We ran out of data
 					break
-
-	def _send_buffer(self):
-		for i in range(self.wind_size):
-			seqno = self.send_base + i
-			if not self.buffer.has_key(seqno):
-				continue
-			else:
-				self._transmit(seqno)
-
-		#Set the whole buffer as inflight
-		for seqno in self.buffer.iterkeys():
-			self.buffer[seqno] = BufferedData(True, self.buffer[seqno].data)
-
 
 	def _listen_for_acks(self):
 		while True:
@@ -152,41 +95,48 @@ class Sender(BasicSender.BasicSender):
 						#Good Packet!
 						msg_type, seqno, data, checksum = self.split_packet(response)
 						ack = int(seqno)
+						print "ACK: %d" % (ack - self.isn)
 						if ack > self.send_base:
-							print ack - self.isn
+							self._timer_stop()
 							if ack - self.isn > self.num_packets:
 								#We received an ack for a packet seq no. greater than the num of packets we need to send. We are DONE!
 								return
 							else:
 								#Move our send_base over more to the right
-								self.timer.cancel()
 								self.send_base = ack
 
 								#Buffer more packets and send them
-								self._initalize_buffer()
-								self._send_buffer()
+								self._initalize_and_send_buffer()
 				else:
 					#Not good packet!
 					pass
 
 	def _timeout(self):
-		self._transmit(seqno)
-		self.timer.start()
+		self._transmit(self.send_base)
+		self._timer_start()
 
 	def _transmit(self, seqno):
+		#Send a single packet. If packet is already inflight and this is not a retransmit, we won't send the packet again.
 		msg_type = "data"
-		buffered_data = self.buffer[seqno]
+		data = self.buffer[seqno]
 
-		if buffered_data.inflight:
-			#Packet already inflight, waiting for acks
-			pass
-		else:
-			#Send packet
-			print seqno - self.isn
-			packet = self.make_packet(msg_type, seqno, buffered_data.data)
-			self.send(packet)
+		print "TRANSMITED: %d" % (seqno - self.isn)
+		packet = self.make_packet(msg_type, seqno, data)
+		self.send(packet)
+
+	def _timer_start(self):
+		#Starts the timeout timer
+		self.timer = threading.Timer(self.timeout, self._timeout)
+		self.timer.start()
+
+	def _timer_stop(self):
+		#Stops the timeout timer
+		if self.timer:
+			self.timer.cancel()
+			self.timer = None
 
 	def initialize_connection(self, retry_count):
+		print "WHY HELLO THERE"
 		#Three Way Handshake
 		if retry_count > 0:
 
@@ -218,6 +168,7 @@ class Sender(BasicSender.BasicSender):
 			return False      
 
 	def tear_down_connection(self, retry_count):
+		print "TEAR DOWN THIS WALL"
 		if retry_count > 0:
 
 			#Fields of the packet
