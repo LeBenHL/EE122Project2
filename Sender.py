@@ -48,6 +48,7 @@ class Sender(BasicSender.BasicSender):
 			
 			#Sent first window of packets
 			self._initalize_and_send_buffer()
+			self._timer_start()
 
 			#Start listening for acks and advance sliding window as needed
 			self._listen_for_acks()
@@ -74,13 +75,10 @@ class Sender(BasicSender.BasicSender):
 				pass
 			else:
 				data = self.infile.read(self.max_payload)
-
+				print "BUFFER: %d" % (seqno - self.isn)
 				if data:
 					#We have Data!
 					self.buffer[seqno] = data
-					#Send this data right away!
-					if self.timer is None:
-						self._timer_start()
 					self._transmit(seqno)
 				else:
 					#We ran out of data
@@ -103,6 +101,7 @@ class Sender(BasicSender.BasicSender):
 								return
 							else:
 								#Move our send_base over more to the right
+								self._timer_start()
 								self.send_base = ack
 
 								#Buffer more packets and send them
@@ -131,9 +130,8 @@ class Sender(BasicSender.BasicSender):
 
 	def _timer_stop(self):
 		#Stops the timeout timer
-		if self.timer:
-			self.timer.cancel()
-			self.timer = None
+		self.timer.cancel()
+		self.timer = None
 
 	def initialize_connection(self, retry_count):
 		print "WHY HELLO THERE"
