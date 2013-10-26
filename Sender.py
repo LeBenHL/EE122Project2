@@ -108,32 +108,11 @@ class Sender(BasicSender.BasicSender):
 						if msg_type != "ack":
 							continue
 						ack = int(seqno)
-						#print "ACK: %d" % (ack - self.isn)
-						if ack > self.send_base:
-							#We can move our window forward! And stop our timer!
-							self._timer_stop()
-							self.send_base = ack
-							if self.send_base - self.isn > self.num_packets:
-								#We received an ack for a packet seq no. greater than the num of packets we need to send. We are DONE!
-								return
-							else:
-								#Buffer more packets and send them
-								self._initialize_and_send_buffer()
-
-								#Start timer again!
-								self._timer_restart()
+						if self.handle_new_ack(ack):
+							return
 				else:
 					#Not good packet! Listen for acks again
 					pass
-
-	def _timeout(self):
-		#Timeout Function. Just resubmit all packets in buffer
-		for i in range(self.wind_size):
-			seqno = self.send_base + i
-			if self.buffer.has_key(seqno):
-				self._transmit(seqno)
-		if not self.send_base - self.isn > self.num_packets:
-			self._timer_restart()
 
 	def _transmit(self, seqno):
 		#Send a single packet.
@@ -158,7 +137,7 @@ class Sender(BasicSender.BasicSender):
 			if self.timer:
 				self.timer.cancel()
 				self.timer = None
-			self.timer = threading.Timer(self.timeout, self._timeout)
+			self.timer = threading.Timer(self.timeout, self.handle_timeout)
 			self.timer.start()
 
 	def _initialize_connection(self, retry_count):
@@ -181,8 +160,9 @@ class Sender(BasicSender.BasicSender):
 				if Checksum.validate_checksum(response):
 					#Good Packet!
 					msg_type, seqno, data, checksum = self.split_packet(response)
-					self.send_base = int(seqno)
-					if msg_type == "ack":
+					ack = int(seqno)
+					if msg_type == "ack" and ack == self.isn + 1:
+						self.send_base = ack
 						return True
 					else:
 						return self._initialize_connection(retry_count - 1)
@@ -233,12 +213,34 @@ class Sender(BasicSender.BasicSender):
 
 
 	def handle_timeout(self):
-		pass
+		#Timeout Function. Just resubmit all packets in buffer
+		for i in range(self.wind_size):
+			seqno = self.send_base + i
+			if self.buffer.has_key(seqno):
+				self._transmit(seqno)
+		if not self.send_base - self.isn > self.num_packets:
+			self._timer_restart()
 
 	def handle_new_ack(self, ack):
-		pass
+		#Returns True if we are done sending file, False otherwise
+		#print "ACK: %d" % (ack - self.isn)
+		if ack > self.send_base:
+			#We can move our window forward! And stop our timer!
+			self._timer_stop()
+			self.send_base = ack
+			if self.send_base - self.isn > self.num_packets:
+				#We received an ack for a packet seq no. greater than the num of packets we need to send. We are DONE!
+				return True
+			else:
+				#Buffer more packets and send them
+				self._initialize_and_send_buffer()
+
+				#Start timer again!
+				self._timer_restart()
+		return False
 
 	def handle_dup_ack(self, ack):
+		
 		pass
 
 	def log(self, msg):
