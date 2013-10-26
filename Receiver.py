@@ -62,7 +62,7 @@ class Receiver():
         }
 
     def start(self):
-        print "===== Welcome to Bears-TP Receiver v1.2! ====="
+        print "===== Welcome to Bears-TP Receiver v1.3! ====="
         print "* Listening on port %d..." % self.port
         while True:
             try:

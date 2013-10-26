@@ -40,6 +40,11 @@ class Sender(BasicSender.BasicSender):
 		self.timer = None
 		self.lock = threading.Lock()
 
+		#For DUP ACKS
+		self.prev_ack = None
+		self.dup_ack_count = 0
+		self.dup_ack_max = 3
+
 	# Main sending loop.
 	def start(self):
 		#print "===== Welcome to Bears-TP Sender v1.0! ====="
@@ -224,6 +229,17 @@ class Sender(BasicSender.BasicSender):
 	def handle_new_ack(self, ack):
 		#Returns True if we are done sending file, False otherwise
 		#print "ACK: %d" % (ack - self.isn)
+
+		#Dup Acks
+		if self.prev_ack is not None and self.prev_ack == ack:
+			self.dup_ack_count += 1
+			if self.dup_ack_count >= self.dup_ack_max:
+				self.handle_dup_ack(ack)
+		else:
+			self.dup_ack_count = 0
+
+		self.prev_ack = ack
+
 		if ack > self.send_base:
 			#We can move our window forward! And stop our timer!
 			self._timer_stop()
@@ -240,8 +256,9 @@ class Sender(BasicSender.BasicSender):
 		return False
 
 	def handle_dup_ack(self, ack):
-		
-		pass
+		#print "DUP ACK: %d" % (ack - self.isn)
+		if self.buffer.has_key(ack):
+			self._transmit(ack)
 
 	def log(self, msg):
 		if self.debug:

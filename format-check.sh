@@ -21,18 +21,24 @@ fail()
   echo " $ cd bears-tp"
   echo " $ tar -cf project2-obama-biden.tar Sender.py README.txt"
   echo "---------------------------------------------------------------"
+  if [ -f FormatCheckSender.py ]; then
+    rm FormatCheckSender.py
+  fi
   exit 1
 }
 
 # Check if files exist
 FAIL=0
-mkdir temp-project-directory
-tar -xf $tarfile -C temp-project-directory
+mkdir -p temp-project-directory
+cd temp-project-directory
+tar -xf ../"$tarfile"
+cd ..
 if [ ! -f temp-project-directory/Sender.py ]; then
   echo "Sender.py not found!"
   FAIL=1
 else
   echo "Found Sender.py"
+  cp temp-project-directory/Sender.py FormatCheckSender.py
 fi
 if [ ! -f temp-project-directory/README.txt ]; then
   echo "README.txt not found!"
@@ -46,5 +52,5 @@ if [ $FAIL == 1 ]; then
 fi
 
 # Run the simple tests for sanity check
-python TestHarness.py
-
+python TestHarness.py -s FormatCheckSender.py -r Receiver.py
+rm FormatCheckSender.py
