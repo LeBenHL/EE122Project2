@@ -52,7 +52,7 @@ class Sender(BasicSender.BasicSender):
 	# Main sending loop.
 	def start(self):
 		#print "===== Welcome to Bears-TP Sender v1.0! ====="
-		self.isn = random.randint(0, 100)
+		self.isn = 0
 
 		if (self._initialize_connection(self.retry_count)):
 			
@@ -234,7 +234,7 @@ class Sender(BasicSender.BasicSender):
 
 	def handle_timeout(self, seqno):
 		#Timeout Function. Just resubmit the send_base packet and reset the timer
-		self._transmit(seqno, resubmit =True)
+		self._transmit(seqno, resubmit=True)
 
 	def handle_new_ack(self, ack):
 		#Returns True if we are done sending file, False otherwise
@@ -250,6 +250,8 @@ class Sender(BasicSender.BasicSender):
 				sample_rtt = delta.seconds + delta.microseconds/1E6
 				self.estimated_rtt = self.alpha * self.estimated_rtt + (1 - self.alpha) * sample_rtt
 				self.timeout = self.estimated_rtt * 2
+
+			del self.packet_timestamp[ack]
 
 			if self.send_base - self.isn > self.num_packets:
 				#We are DONE! Our send_base is higher than the number of packets we are to send

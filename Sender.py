@@ -1,6 +1,5 @@
 import sys
 import getopt
-import random
 from collections import namedtuple
 import os
 import math
@@ -48,7 +47,7 @@ class Sender(BasicSender.BasicSender):
 	# Main sending loop.
 	def start(self):
 		#print "===== Welcome to Bears-TP Sender v1.0! ====="
-		self.isn = random.randint(0, 100)
+		self.isn = 0
 
         # self.initialize_connection initializes the connection
         # and self.send_base, which maintains the invariant that

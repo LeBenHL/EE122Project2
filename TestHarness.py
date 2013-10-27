@@ -276,8 +276,8 @@ if __name__ == "__main__":
         exit()
 
     port = 33123
-    sender = "Sender.py"
-    receiver = "Receiver.py"
+    sender = "SuperSender.py"
+    receiver = "SuperReceiver.py"
 
     for o,a in opts:
         if o in ("-p", "--port"):
