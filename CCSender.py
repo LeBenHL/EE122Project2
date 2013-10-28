@@ -32,7 +32,6 @@ class Sender(BasicSender.BasicSender):
 		self.r_wind_size = 5 # Receiver window size; not necessarily the same as RWND but only modifying sender so self.r_wind_size is substitute
 		self.SSTHRESH = 64000 # TODO: How to set this value initially
 		self.CWND = 1
-		self.CWND_t = 1 # self.CWND value at the moment of transition from SLOW START to CONGESTION AVOIDANCE phase
 
 		#Buffering Packets To Send (Seq #, (inflight, data))
 		self.buffer = dict()
@@ -84,13 +83,11 @@ class Sender(BasicSender.BasicSender):
 
 	def _initialize_and_send_buffer(self):
 		#Remove all items in buffer less than self.send_base.
+		#Dictionary maintains the invariant that it contains packets that we processed at least once.
+		#self.buffer does not necessarily only contain packets that are currently in our window.
         # For cleanup purposes
 		for seqno in self.buffer.keys():
 			if seqno < self.send_base:
-				del self.buffer[seqno]
-
-			# CC: Also remove entries that are >= self.send_base + self.wind_size
-			if seqno >= self.send_base + self.wind_size:
 				del self.buffer[seqno]
 
 		#Add up to WIND_SIZE packets into the buffer
@@ -237,7 +234,7 @@ class Sender(BasicSender.BasicSender):
 	def cc_handle_timeout(self):
 		self.SSTHRESH = self.CWND/2
 		self.CWND = 1
-		self.wind_size = min(self.r_wind_size, math.floor(self.CWND))
+		self.wind_size = min(self.r_wind_size, int(math.floor(self.CWND)))
 		self.phase = "SLOW START"
 
 	def handle_new_ack(self, ack):
@@ -273,17 +270,16 @@ class Sender(BasicSender.BasicSender):
 	def cc_handle_new_ack(self):
 		if (self.phase == "SLOW START"): # CC: Handle a new ACK in Slow Start
 			self.CWND = self.CWND + 1
-			self.wind_size = min(self.r_wind_size, math.floor(self.CWND))
+			self.wind_size = min(self.r_wind_size, int(math.floor(self.CWND)))
 			if(self.CWND >= self.SSTHRESH):
 				self.phase = "CONGESTION AVOIDANCE"
-				self.CWND_t = self.CWND
 		elif (self.phase == "FAST RECOVERY"):
 			self.CWND = self.SSTHRESH
-			self.wind_size = min(self.r_wind_size, math.floor(self.CWND))
+			self.wind_size = min(self.r_wind_size, int(math.floor(self.CWND)))
 			self.phase = "CONGESTION AVOIDANCE"
 		else: # CC: self.phase == "CONGESTION AVOIDANCE"
-			self.CWND = self.CWND + 1/self.CWND_t
-			self.wind_size = min(self.r_wind_size, math.floor(self.CWND))
+			self.CWND = self.CWND + 1/(math.floor(self.CWND))
+			self.wind_size = min(self.r_wind_size, int(math.floor(self.CWND)))
 
 	def handle_dup_ack(self, ack):
 		#print "DUP ACK: %d" % (ack - self.isn)
@@ -295,11 +291,11 @@ class Sender(BasicSender.BasicSender):
 		if (self.dup_ack_count == 3):
 			self.SSTHRESH = self.CWND/2
 			self.CWND = self.SSTHRESH + 3
-			self.wind_size = min(self.r_wind_size, math.floor(self.CWND))
+			self.wind_size = min(self.r_wind_size, int(math.floor(self.CWND)))
 			self.phase = "FAST RECOVERY"
 		else: # self.dup_ack_count > 3, already in "FAST RECOVERY" phase
 			self.CWND = self.CWND + 1
-			self.wind_size = min(self.r_wind_size, math.floor(self.CWND))
+			self.wind_size = min(self.r_wind_size, int(math.floor(self.CWND)))
 
 	def log(self, msg):
 		if self.debug:
