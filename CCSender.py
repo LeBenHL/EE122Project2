@@ -120,6 +120,8 @@ class Sender(BasicSender.BasicSender):
 						if msg_type != "ack":
 							continue
 						ack = int(seqno)
+						if ack < self.send_base:
+							continue
 						if self.handle_new_ack(ack):
 							return
 				else:
