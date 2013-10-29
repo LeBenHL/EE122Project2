@@ -130,7 +130,8 @@ class Sender(BasicSender.BasicSender):
 			self.send(packet)
 
 			if resubmit:
-				self.buffer[seqno] = BufferedData(self.buffer[seqno].acked, True, self.buffer[seqno].data)
+				if self.buffer.has_key(seqno):
+					self.buffer[seqno] = BufferedData(self.buffer[seqno].acked, True, self.buffer[seqno].data)
 
 			if not self.packet_timestamp.has_key(seqno):
 				self.packet_timestamp[seqno] = datetime.now()
@@ -236,7 +237,8 @@ class Sender(BasicSender.BasicSender):
 
 	def handle_timeout(self, seqno):
 		#Timeout Function. Just resubmit the send_base packet and reset the timer
-		self._transmit(seqno, resubmit=True)
+		if not self.send_base - self.isn > self.num_packets:
+			self._transmit(seqno, resubmit=True)
 
 	def handle_new_ack(self, ack):
 		#Returns True if we are done sending file, False otherwise
@@ -253,7 +255,8 @@ class Sender(BasicSender.BasicSender):
 				self.estimated_rtt = self.alpha * self.estimated_rtt + (1 - self.alpha) * sample_rtt
 				self.timeout = self.estimated_rtt * 2
 
-			del self.packet_timestamp[ack]
+			if self.packet_timestamp.has_key(ack):
+				del self.packet_timestamp[ack]
 
 			if self.send_base - self.isn > self.num_packets:
 				#We are DONE! Our send_base is higher than the number of packets we are to send

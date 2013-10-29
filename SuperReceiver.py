@@ -15,7 +15,7 @@ class Connection():
         self.max_buf_size = 5
         self.outfile = open("%s.%d" % (host,port),"w")
         self.seqnums = {} # enforce single instance of each seqno
-
+        
     def ack(self,seqno, data):
         res_data = []
         self.updated = time.time()
@@ -62,7 +62,7 @@ class Receiver():
         }
 
     def start(self):
-        print "===== Welcome to Bears-TP Receiver v1.2! ====="
+        print "===== Welcome to Bears-TP Receiver v1.3! ====="
         print "* Listening on port %d..." % self.port
         while True:
             try:
