@@ -16,8 +16,8 @@ forwarder, so they will magically be run.
 """
 def tests_to_run(forwarder):
     from tests import BasicTest, RandomDropTest
-    BasicTest.BasicTest(forwarder, "scene8.bmp")
-    RandomDropTest.RandomDropTest(forwarder, "scene8.bmp")
+    #BasicTest.BasicTest(forwarder, "scene8.bmp")
+    RandomDropTest.RandomDropTest(forwarder, "README")
 
 """
 Testing is divided into two pieces: this forwarder and a set of test cases in
@@ -276,8 +276,8 @@ if __name__ == "__main__":
         exit()
 
     port = 33123
-    sender = "SuperSender.py"
-    receiver = "SuperReceiver.py"
+    sender = "ShittySender.py"
+    receiver = "Receiver.py"
 
     for o,a in opts:
         if o in ("-p", "--port"):
