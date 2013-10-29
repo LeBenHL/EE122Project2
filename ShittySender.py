@@ -1,5 +1,6 @@
 import sys
 import getopt
+from datetime import datetime
 import os
 import math
 import threading
@@ -34,10 +35,6 @@ class Sender(BasicSender.BasicSender):
 		self.num_packets = math.ceil(float(file_size) / self.max_payload)
 		#print self.num_packets
 
-		#Timeout Timer
-		self.timer = None
-		self.lock = threading.Lock()
-
 		#For DUP ACKS
 		self.prev_ack = None
 		self.dup_ack_count = 0
@@ -57,9 +54,6 @@ class Sender(BasicSender.BasicSender):
 			if self.num_packets > 0:
 				#Send first window of packets
 				self._initialize_and_send_buffer()
-
-				#Begin Timeout Timer
-				self._timer_restart()
 
 				#Start listening for acks and advance sliding window as needed
 				self._listen_for_acks()
@@ -100,9 +94,18 @@ class Sender(BasicSender.BasicSender):
 					break
 
 	def _listen_for_acks(self):
+		self.time_til_timeout = self.timeout
 		while True:
 			#Always listen for acks
-			response = self.receive()
+			start_time = datetime.now()
+			response = self.receive(timeout=self.time_til_timeout)
+			end_time = datetime.now()
+
+			delta = end_time - start_time
+			time_elapsed = delta.seconds + delta.microseconds/1E6
+
+			self.time_til_timeout = max(self.time_til_timeout - time_elapsed, 0)
+			print self.time_til_timeout
 
 			if response:
 				if Checksum.validate_checksum(response):
@@ -118,6 +121,9 @@ class Sender(BasicSender.BasicSender):
 				else:
 					#Not good packet! Listen for acks again
 					pass
+			else:
+				#TIMEOUT!
+				self.handle_timeout()
 
 	def _transmit(self, seqno):
 		#Send a single packet.
@@ -128,22 +134,6 @@ class Sender(BasicSender.BasicSender):
 			#print "TRANSMITED: %d" % (seqno - self.isn)
 			packet = self.make_packet(msg_type, seqno, data)
 			self.send(packet)
-
-	def _timer_stop(self):
-		#Stops the timeout timer
-		with self.lock:
-			if self.timer:
-				self.timer.cancel()
-				self.timer = None
-
-
-	def _timer_restart(self):
-		with self.lock:
-			if self.timer:
-				self.timer.cancel()
-				self.timer = None
-			self.timer = threading.Timer(self.timeout, self.handle_timeout)
-			self.timer.start()
 
 	def _initialize_connection(self, retry_count):
 		#print "WHY HELLO THERE"
@@ -218,13 +208,13 @@ class Sender(BasicSender.BasicSender):
 
 
 	def handle_timeout(self):
+		print "TIMEOUT!"
 		#Timeout Function. Just resubmit all packets in buffer
 		for i in range(self.wind_size):
 			seqno = self.send_base + i
 			if self.buffer.has_key(seqno):
 				self._transmit(seqno)
-		if not self.send_base - self.isn > self.num_packets:
-			self._timer_restart()
+		self.time_til_timeout = self.timeout
 
 	def handle_new_ack(self, ack):
 		#Returns True if we are done sending file, False otherwise
@@ -241,9 +231,9 @@ class Sender(BasicSender.BasicSender):
 		self.prev_ack = ack
 
 		if ack > self.send_base:
-			#We can move our window forward! And stop our timer!
-			self._timer_stop()
+			#We can move our window forward!
 			self.send_base = ack
+			self.time_til_timeout = self.timeout
 			if self.send_base - self.isn > self.num_packets:
 				#We received an ack for a packet seq no. greater than the num of packets we need to send. We are DONE!
 				return True
@@ -251,8 +241,6 @@ class Sender(BasicSender.BasicSender):
 				#Buffer more packets and send them
 				self._initialize_and_send_buffer()
 
-				#Start timer again!
-				self._timer_restart()
 		return False
 
 	def handle_dup_ack(self, ack):
