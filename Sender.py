@@ -228,7 +228,7 @@ class Sender(BasicSender.BasicSender):
 
 	def handle_new_ack(self, ack):
 		#Returns True if we are done sending file, False otherwise
-		print "ACK: %d" % (ack - self.isn)
+		#print "ACK: %d" % (ack - self.isn)
 
 		#Dup Acks
 		if self.prev_ack is not None and self.prev_ack == ack:

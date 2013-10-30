@@ -105,7 +105,7 @@ class Sender(BasicSender.BasicSender):
 			time_elapsed = delta.seconds + delta.microseconds/1E6
 
 			self.time_til_timeout = max(self.time_til_timeout - time_elapsed, 0)
-			print self.time_til_timeout
+			#print self.time_til_timeout
 
 			if response:
 				if Checksum.validate_checksum(response):
@@ -208,7 +208,7 @@ class Sender(BasicSender.BasicSender):
 
 
 	def handle_timeout(self):
-		print "TIMEOUT!"
+		#print "TIMEOUT!"
 		#Timeout Function. Just resubmit all packets in buffer
 		for i in range(self.wind_size):
 			seqno = self.send_base + i
@@ -218,7 +218,7 @@ class Sender(BasicSender.BasicSender):
 
 	def handle_new_ack(self, ack):
 		#Returns True if we are done sending file, False otherwise
-		print "ACK: %d" % (ack - self.isn)
+		#print "ACK: %d" % (ack - self.isn)
 
 		#Dup Acks
 		if self.prev_ack is not None and self.prev_ack == ack:
